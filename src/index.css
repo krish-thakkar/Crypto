@@ -1,1 +1,8 @@
 @import "tailwindcss";
+/* In your CSS file */
+@media (max-width: 640px) {
+    .price-chart-container {
+      touch-action: pan-y; /* Improves scrolling behavior */
+      -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    }
+  }

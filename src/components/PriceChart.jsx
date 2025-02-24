@@ -25,10 +25,9 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
   const [trendlinePoints, setTrendlinePoints] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [temporaryLine, setTemporaryLine] = useState(null);
-  const [scrollPosition, setScrollPosition] = useState(0); // Position for scrolling (0 to 100)
-  const [zoomLevel, setZoomLevel] = useState(1); // 1 = full data, >1 zooms in
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
-  // Reduce display frequency by sampling every nth candle
   const sampleData = (dataArray, sampleRate = 10) => {
     return dataArray.filter((_, index) => index % sampleRate === 0);
   };
@@ -38,9 +37,7 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
 
     const loadData = async () => {
       try {
-        console.log('Fetching data for symbol:', symbol, 'timeframe:', timeframe);
         const klineData = await fetchKlines(symbol, timeframe);
-        console.log('Kline Data:', klineData);
         const formattedData = klineData.map(candle => ({
           time: new Date(candle.time * 1000),
           open: parseFloat(candle.open) || 0,
@@ -50,7 +47,6 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
           volume: parseFloat(candle.volume) || 0,
           color: parseFloat(candle.close) >= parseFloat(candle.open) ? '#26a69a' : '#ef5350'
         }));
-        console.log('Formatted Data:', formattedData);
         setData(formattedData);
         setDisplayedData(sampleData(formattedData));
       } catch (error) {
@@ -60,76 +56,58 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
 
     loadData();
     return () => {
-      if (subscriptionCleanup) {
-        subscriptionCleanup();
-      }
+      if (subscriptionCleanup) subscriptionCleanup();
     };
   }, [symbol, timeframe]);
 
   const applyZoomAndScroll = () => {
     if (data.length === 0) return;
-
     const totalPoints = data.length;
-    const visiblePoints = Math.max(Math.floor(totalPoints / zoomLevel), 1); // Ensure at least 1 point
-
-    // Use scrollPosition (0-100) to determine the starting point
+    const visiblePoints = Math.max(Math.floor(totalPoints / zoomLevel), 1);
     const scrollPercentage = scrollPosition / 100;
     const startIndex = Math.max(0, Math.floor((totalPoints - visiblePoints) * scrollPercentage));
     const endIndex = Math.min(totalPoints, startIndex + visiblePoints);
-
     setDisplayedData(sampleData(data.slice(startIndex, endIndex)));
   };
 
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev * 2, 10)); // Limit zoom to 10x
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => Math.max(prev / 2, 1)); // Minimum zoom level of 1 (full data)
-  };
-
+  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev * 2, 10));
+  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev / 2, 1));
   const handleResetZoom = () => {
     setZoomLevel(1);
     setScrollPosition(0);
     setDisplayedData(sampleData(data));
   };
-
   const handleScrollChange = (e) => {
-    const newPosition = parseInt(e.target.value, 10);
-    setScrollPosition(newPosition);
+    if (zoomLevel === 1) {
+      // Replace this alert with your preferred toast notification
+      alert('Please zoom in first to use the scroll slider');
+      return;
+    }
+    setScrollPosition(parseInt(e.target.value, 10));
   };
 
   const handleChartClick = useCallback((event) => {
-    console.log('Chart Click Event:', event);
     if (!drawingMode || !event?.activePayload?.[0]) return;
-
     const clickedData = event.activePayload[0].payload;
     const point = {
       x: clickedData.time.getTime() / 1000,
       y: (clickedData.high + clickedData.low) / 2
     };
-
     setTrendlinePoints(prev => {
       const newPoints = prev.length < 2 ? [...prev, point] : [point];
-      console.log('New Trendline Points:', newPoints);
-      if (newPoints.length === 2) {
-        setModalOpen(true);
-      }
+      if (newPoints.length === 2) setModalOpen(true);
       setTemporaryLine(newPoints.length === 1 ? null : [newPoints[0], newPoints[1]]);
       return newPoints;
     });
   }, [drawingMode]);
 
   const handleMouseMove = useCallback((event) => {
-    console.log('Mouse Move Event:', event);
     if (!drawingMode || trendlinePoints.length !== 1 || !event?.activePayload?.[0]) return;
-
     const hoveredData = event.activePayload[0].payload;
     const point = {
       x: hoveredData.time.getTime() / 1000,
       y: (hoveredData.high + hoveredData.low) / 2
     };
-
     setTemporaryLine([trendlinePoints[0], point]);
   }, [drawingMode, trendlinePoints]);
 
@@ -142,10 +120,9 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
 
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload?.[0]) return null;
-
     const data = payload[0].payload;
     return (
-      <div className="bg-gray-800 p-2 rounded border border-gray-700">
+      <div className="bg-gray-800 p-2 rounded border border-gray-700 text-sm">
         <p className="text-white">{data.time.toLocaleString()}</p>
         <p className="text-green-400">O: ${data.open.toFixed(2)}</p>
         <p className="text-blue-400">H: ${data.high.toFixed(2)}</p>
@@ -158,26 +135,21 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
   const renderCandlestick = (props) => {
     const { x, y, width, payload } = props;
     const fill = payload.close >= payload.open ? '#26a69a' : '#ef5350';
-    
-    const minWidth = 8;
+    const minWidth = window.innerWidth < 640 ? 4 : 8; // Smaller candles on mobile
     const adjustedWidth = Math.max(width * 1.0, minWidth);
     const xOffset = (width - adjustedWidth) / 2;
 
     const maxPrice = Math.max(...displayedData.map(d => d.high || 0));
     const minPrice = Math.min(...displayedData.map(d => d.low || 0));
     const yScale = props.height / (maxPrice - minPrice || 1);
-    
-    if (!payload.open || !payload.close || !payload.high || !payload.low) {
-      console.log('Invalid payload:', payload);
-      return null;
-    }
+
+    if (!payload.open || !payload.close || !payload.high || !payload.low) return null;
 
     const openY = y + (maxPrice - payload.open) * yScale;
     const closeY = y + (maxPrice - payload.close) * yScale;
     const highY = y + (maxPrice - payload.high) * yScale;
     const lowY = y + (maxPrice - payload.low) * yScale;
-
-    const bodyHeight = Math.max(Math.abs(closeY - openY), 3);
+    const bodyHeight = Math.max(Math.abs(closeY - openY), 2);
     const bodyY = payload.close >= payload.open ? closeY : openY;
 
     return (
@@ -188,7 +160,7 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
           x2={x + width / 2} 
           y2={Math.min(openY, closeY)}
           stroke={fill} 
-          strokeWidth={2}
+          strokeWidth={1}
         />
         <line 
           x1={x + width / 2} 
@@ -196,7 +168,7 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
           x2={x + width / 2} 
           y2={lowY}
           stroke={fill} 
-          strokeWidth={2}
+          strokeWidth={1}
         />
         <rect
           x={x + xOffset}
@@ -205,25 +177,24 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
           height={bodyHeight}
           fill={fill}
           stroke="#000000"
-          strokeWidth={1}
+          strokeWidth={0.5}
         />
       </g>
     );
   };
 
-  // Update displayedData when scrollPosition or zoomLevel changes
   useEffect(() => {
     applyZoomAndScroll();
   }, [scrollPosition, zoomLevel, data]);
 
   return (
-    <div className="space-y-4 p-4 bg-gray-900 rounded-lg shadow-lg">
-      <div className="bg-gray-800 p-4 rounded-lg">
-        <div className="flex justify-between items-center">
+    <div className="space-y-4 p-2 sm:p-4 bg-gray-900 rounded-lg shadow-lg w-full">
+      <div className="bg-gray-800 p-3 sm:p-4 rounded-lg">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
           <select 
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value)}
-            className="bg-gray-700 text-white px-4 py-2 rounded-lg"
+            className="bg-gray-700 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg text-sm w-full sm:w-auto"
           >
             <option value="1m">1 Minute</option>
             <option value="5m">5 Minutes</option>
@@ -235,43 +206,43 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
           
           <button
             onClick={() => setDrawingMode(!drawingMode)}
-            className={`px-4 py-2 rounded-lg ${drawingMode ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white'}`}
+            className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg text-sm w-full sm:w-auto ${
+              drawingMode ? 'bg-blue-600 text-white' : 'bg-gray-700 text-white'
+            }`}
           >
             {drawingMode ? 'Cancel Drawing' : 'Draw Trendline'}
           </button>
         </div>
         
-        <div className="text-white mt-2 text-lg font-semibold">
+        <div className="text-white mt-2 text-base sm:text-lg font-semibold">
           <span>{symbol}</span>
         </div>
 
-        {/* Zoom and Scroll Controls */}
-        <div className="mt-4 flex flex-col space-y-2">
-          <div className="flex space-x-2">
+        <div className="mt-2 sm:mt-4 flex flex-col space-y-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={handleZoomIn}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              className="bg-blue-600 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 text-xs sm:text-sm"
             >
               Zoom In
             </button>
             <button
               onClick={handleZoomOut}
-              className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
+              className="bg-gray-700 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-gray-600 text-xs sm:text-sm"
             >
               Zoom Out
             </button>
             <button
               onClick={handleResetZoom}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+              className="bg-red-600 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-red-700 text-xs sm:text-sm"
             >
-              Reset Zoom
+              Reset
             </button>
           </div>
 
-          {/* Slider for Scrolling */}
           <div className="flex flex-col space-y-1">
             <div className="flex items-center space-x-2">
-              <label className="text-white">Scroll to Area:</label>
+              <label className="text-white text-xs sm:text-sm">Scroll:</label>
               <input
                 type="range"
                 min="0"
@@ -280,44 +251,51 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
                 onChange={handleScrollChange}
                 className="w-full"
               />
-              <span className="text-white">{scrollPosition}%</span>
+              <span className="text-white text-xs sm:text-sm">{scrollPosition}%</span>
             </div>
-            <p className="text-gray-400 text-sm">
-              Use when you are zoomed in and want to explore other regions without zooming out.
-            </p>
           </div>
         </div>
       </div>
 
-      <div className="w-full h-96 bg-gray-900 border border-gray-800 rounded-lg">
+      <div className="w-full h-[60vh] sm:h-96 bg-gray-900 border border-gray-800 rounded-lg mt-2">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={displayedData}
             onClick={handleChartClick}
             onMouseMove={handleMouseMove}
-            margin={{ top: 10, right: 30, left: 0, bottom: 30 }}
+            onTouchStart={handleChartClick}  // Add touch support
+            onTouchMove={handleMouseMove}    // Add touch support
+            margin={{ 
+              top: 10, 
+              right: window.innerWidth < 640 ? 10 : 30, 
+              left: 0, 
+              bottom: window.innerWidth < 640 ? 20 : 30 
+            }}
           >
             <XAxis
               dataKey="time"
-              tickFormatter={(time) => time.toLocaleTimeString()}
+              tickFormatter={(time) => time.toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}
               stroke="#b2b9c3"
-              minTickGap={100}
+              minTickGap={50}
+              tick={{ fontSize: window.innerWidth < 640 ? 10 : 12 }}
             />
             <YAxis
               domain={['dataMin - 100', 'dataMax + 100']}
               stroke="#b2b9c3"
               orientation="right"
               tickFormatter={(value) => `$${value.toFixed(2)}`}
+              tick={{ fontSize: window.innerWidth < 640 ? 10 : 12 }}
             />
             <Tooltip content={<CustomTooltip />} />
             <CartesianGrid strokeDasharray="3 3" stroke="#1a2333" />
-            
             <Bar
               dataKey="high"
               shape={renderCandlestick}
               isAnimationActive={false}
             />
-
             {temporaryLine && (
               <ReferenceLine
                 segment={[
@@ -342,8 +320,7 @@ const PriceChart = ({ symbol = 'BTCUSD' }) => {
         } : null}
       />
 
-      {/* Attribution */}
-      <div className="text-center text-gray-400 text-sm mt-4">
+      <div className="text-center text-gray-400 text-xs sm:text-sm mt-2">
         Made By Krish Thakkar ❤️
       </div>
     </div>
